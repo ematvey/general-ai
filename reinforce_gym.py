@@ -217,14 +217,11 @@ def train(env, policy, opt,
         act_linear, policy_state = policy(*args)
       else:
         act_linear = policy(*args)
-      # print('act_linear', act_linear)
       sm = F.softmax(act_linear)
-      # print('softmax', sm)
       act = sm.multinomial()
       actions.append(act)
       action = act.data[0][0]
       state, reward, done, what = env.step(action)
-      # print(state, reward, done, what)
       total_reward += reward
       if render:
         env.render()
@@ -251,7 +248,6 @@ def train(env, policy, opt,
       opt.zero_grad()
       for act in actions:
         act.reinforce(scaled_reward)
-      # import IPython; IPython.embed()
       autograd.backward(actions, [None for _ in actions])
       grad_norm = clip_grad(policy, max_grad_norm)
       # if grad_norm < 0.001:
@@ -277,31 +273,35 @@ def atari_observation_preprocess(frame):
   # import ipdb; ipdb.set_trace()
   return float_t(x)
 
+
+atari = True
+
 if __name__ == '__main__':
-  # env = gym.make('Breakout-v0')
-  env = gym.make('CartPole-v1')
+  if atari:
+    env = gym.make('Breakout-v0')
+  else:
+    env = gym.make('CartPole-v1')
+
+  obs_shape = env.observation_space.shape
+  if len(obs_shape) == 1:
+    obs_space = obs_shape[0]
+  action_space = env.action_space.n
+
+  reward_history = []
 
   try:
 
-    obs_shape = env.observation_space.shape
-    if len(obs_shape) == 1:
-      obs_space = obs_shape[0]
-
-    action_space = env.action_space.n
-
-    reward_history = []
-
-    policy = LinearPolicy(obs_space, action_space)
-    observation_preproc_func = _default_observation_preprocess_func
-
-    # policy = AtariPolicy(action_space)
-    # observation_preproc_func = atari_observation_preprocess
-
+    if not atari:
+      policy = LinearPolicy(obs_space, action_space)
+      observation_preproc_func = _default_observation_preprocess_func
+    else:
+      policy = AtariPolicy(action_space)
+      observation_preproc_func = atari_observation_preprocess
 
     if cuda:
       policy = policy.cuda()
 
-    opt = torch.optim.Adam(policy.parameters(), lr=1e-2)
+    opt = torch.optim.SGD(policy.parameters(), lr=1e-2)
 
     def episode_callback(policy, reward):
       describe_module_parameters(policy)
@@ -311,7 +311,8 @@ if __name__ == '__main__':
       max_grad_norm=np.inf,
       observation_preproc_func=observation_preproc_func,
       episode_callback=episode_callback,
-      reward_baseline_len=30, render=False)
+      reward_baseline_len=30,
+      render=False)
 
     # canterpole
     # max grad norm 10, history reward baseline 100 -- no convergence after 1000 episodes
