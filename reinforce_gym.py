@@ -110,32 +110,14 @@ class RecurrentPolicy(nn.Module):
 class LinearPolicy(nn.Module):
   def __init__(self, observation_space: int, action_space: int):
     super().__init__()
-    self.obs_input_size = observation_space
-    self.action_space = action_space
-
-    # aux RNN observes previous reward history
-    self.affine = nn.Linear(self.obs_input_space, self.action_space)
-
-    # d = 0.1
-    # for p in self.parameters():
-    #   p.data.uniform_(-d, d)
-
-  def forward(self, input, prev_reward, state):
-    obs = input.unsqueeze(0)
-    r = prev_reward.unsqueeze(0).unsqueeze(0)
-    return self.affine(input)
-
-class LinearPolicy(nn.Module):
-  def __init__(self, observation_space: int, action_space: int):
-    super().__init__()
     self.affine = nn.Linear(observation_space, action_space)
-  def forward(self, input, prev_reward, state):
+  def forward(self, input):
     obs = input.unsqueeze(0)
-    r = prev_reward.unsqueeze(0).unsqueeze(0)
     return self.affine(input)
 
 class AtariPolicy(nn.Module):
   def __init__(self, action_space):
+    # input space is (3 x 220 x 160)
     super().__init__()
     self.conv1 = nn.Conv2d(3, 32, 3, stride=2, padding=1)
     self.conv2 = nn.Conv2d(32, 32, 3, stride=2, padding=1)
@@ -160,6 +142,12 @@ class AtariPolicy(nn.Module):
     x = F.sigmoid(x)
     return x
 
+def describe_module_parameters(module):
+  print(' ->> parameter norms')
+  for name, node in module.state_dict().items():
+    print('%20s %7.3f' % (name, node.norm()))
+  print('\n')
+
 def clip_grad(policy, max_grad_norm=100.0):
   grad_norm = 0.0
   for p in policy.parameters():
@@ -170,7 +158,6 @@ def clip_grad(policy, max_grad_norm=100.0):
     for p in policy.parameters():
       p.grad.mul_(grad_clip_ratio)
   return grad_norm
-
 
 def _default_observation_preprocess_func(obs):
   """ndarray obs"""
@@ -183,7 +170,7 @@ def _default_reward_preprocess_func(reward):
 def train(env, policy, opt,
           observation_preproc_func=_default_observation_preprocess_func,
           reward_preproc_func=_default_reward_preprocess_func,
-          reward_callback=None,
+          episode_callback=None,
           feed_reward=False,
           max_reward=5000, max_episodes=10000,
           checkpoint_filename='checkpoint.tar', render=False,
@@ -248,8 +235,6 @@ def train(env, policy, opt,
         break
 
     reward_history.append(total_reward)
-    if reward_callback:
-      reward_callback(total_reward)
 
     scaled_reward = None
     grad_norm = None
@@ -266,14 +251,21 @@ def train(env, policy, opt,
       opt.zero_grad()
       for act in actions:
         act.reinforce(scaled_reward)
+      # import IPython; IPython.embed()
       autograd.backward(actions, [None for _ in actions])
       grad_norm = clip_grad(policy, max_grad_norm)
+      # if grad_norm < 0.001:
+      #   print('rel-r: %s, grad norm: %s' % (scaled_reward, grad_norm))
+      #   import IPython; IPython.embed()
       opt.step()
 
       if episode % save_frequency == 0:
         save()
 
     print('episode %s, reward: %s, rel-r: %s, grad norm: %s (max %s)' % (episode, total_reward, scaled_reward, grad_norm, max_grad_norm))
+
+    if episode_callback:
+      episode_callback(policy, total_reward)
 
     if stop:
       save()
@@ -286,44 +278,39 @@ def atari_observation_preprocess(frame):
   return float_t(x)
 
 if __name__ == '__main__':
-  env = gym.make('Breakout-v0')
-  # env = Monitor(env, 'env_train_dir', force=True)
+  # env = gym.make('Breakout-v0')
+  env = gym.make('CartPole-v1')
 
   try:
 
     obs_shape = env.observation_space.shape
-    # assert len(obs_shape) == 1
-    # obs_space = obs_shape[0]
-
-    reward_history = []
+    if len(obs_shape) == 1:
+      obs_space = obs_shape[0]
 
     action_space = env.action_space.n
 
-    # policy = Policy(obs_space, action_space)
+    reward_history = []
 
-    class Policy(nn.Module):
-      def __init__(self):
-        super().__init__()
-        n = 2
-        self.li = nn.Linear(obs_space, n)
-        # self.l2 = nn.Linear(n, n)
-        # self.l3 = nn.Linear(n, n)
-        self.lf = nn.Linear(n, action_space)
+    policy = LinearPolicy(obs_space, action_space)
+    observation_preproc_func = _default_observation_preprocess_func
 
-      def forward(self, x):
-        x = F.relu(self.li(x))
-        return self.lf(x)
+    # policy = AtariPolicy(action_space)
+    # observation_preproc_func = atari_observation_preprocess
 
-    policy = AtariPolicy(action_space)
 
-    # policy = nn.Linear(obs_space, action_space)
     if cuda:
       policy = policy.cuda()
 
-    opt = torch.optim.Adam(policy.parameters(), lr=1e-3)
+    opt = torch.optim.Adam(policy.parameters(), lr=1e-2)
 
-    reward_history = train(env, policy, opt, checkpoint_filename='checkpoint.tar', max_grad_norm=10000,
-      observation_preproc_func=atari_observation_preprocess,
+    def episode_callback(policy, reward):
+      describe_module_parameters(policy)
+
+    reward_history = train(env, policy, opt,
+      checkpoint_filename='checkpoint.tar',
+      max_grad_norm=np.inf,
+      observation_preproc_func=observation_preproc_func,
+      episode_callback=episode_callback,
       reward_baseline_len=30, render=False)
 
     # canterpole
