@@ -115,31 +115,36 @@ class LinearPolicy(nn.Module):
     obs = input.unsqueeze(0)
     return self.affine(input)
 
+
 class AtariPolicy(nn.Module):
-  def __init__(self, action_space):
+  def __init__(self, action_space, debug_act=False):
     # input space is (3 x 220 x 160)
     super().__init__()
+    self.debug_act = debug_act
     self.conv1 = nn.Conv2d(3, 32, 3, stride=2, padding=1)
     self.conv2 = nn.Conv2d(32, 32, 3, stride=2, padding=1)
     self.conv3 = nn.Conv2d(32, 32, 3, stride=2, padding=1)
     self.conv4 = nn.Conv2d(32, 32, 3, stride=2, padding=1)
     self.linear = nn.Linear(4480, action_space)
-    d = 0.1
+    d = 0.01
     for p in self.parameters():
       p.data.uniform_(-d, d)
+  def _log_activation(self, act, name):
+    if self.debug_act:
+      print('%8s mean activation: %12.3f' % (name, act.abs().mean().data[0]))
   def forward(self, obs):
     x = obs
-    x = self.conv1(x)
-    x = F.relu(x)
-    x = self.conv2(x)
-    x = F.relu(x)
-    x = self.conv3(x)
-    x = F.relu(x)
-    x = self.conv4(x)
-    x = F.relu(x)
+    x = F.relu(self.conv1(x))
+    self._log_activation(x, "conv1")
+    x = F.relu(self.conv2(x))
+    self._log_activation(x, "conv2")
+    x = F.relu(self.conv3(x))
+    self._log_activation(x, "conv3")
+    x = F.relu(self.conv4(x))
+    self._log_activation(x, "conv4")
     x = x.view(1, -1)
     x = self.linear(x)
-    x = F.sigmoid(x)
+    self._log_activation(x, "linear")
     return x
 
 def describe_module_parameters(module):
@@ -308,7 +313,7 @@ if __name__ == '__main__':
 
     reward_history = train(env, policy, opt,
       checkpoint_filename='checkpoint.tar',
-      max_grad_norm=np.inf,
+      max_grad_norm=10.0,
       observation_preproc_func=observation_preproc_func,
       episode_callback=episode_callback,
       reward_baseline_len=30,
