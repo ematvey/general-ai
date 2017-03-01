@@ -1,0 +1,22 @@
+{
+  "worlds": {
+    "gw": {
+      "type": "worlds.grid_world.GridWorld"
+    }
+  },
+  "tasks":
+  {
+    "micro1": {
+      "type": "tasks.challenge.round1.challenge_micro.Micro1Task"
+    }
+  },
+  "scheduler":
+  {
+    "type": "core.scheduler.IncrementalTaskScheduler",
+    "args": {
+      "tasks": [
+        "micro1"
+      ]
+    }
+  }
+}

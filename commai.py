@@ -5,8 +5,7 @@ import importlib
 
 sys.path.append(os.path.expandvars('../Round1/src/'))
 
-tasks_config_file = os.path.expandvars('../Round1/src/tasks_config.challenge.json')
-output_file_template = os.path.expandvars('./output-{}')
+# tasks_config_file = os.path.expandvars('../Round1/src/tasks_config.challenge.json')
 
 import learners
 from core.serializer import StandardSerializer
@@ -15,11 +14,12 @@ from core.config_loader import JSONConfigLoader
 from core.session import Session
 from view.win_console import StdOutView
 
-from aux import save_results
-from reinforce_commai import Agent as agent
+# from aux import save_results
+# from reinforce_commai import Agent as agent
 
-def train_agent(agent, id):
+def train_agent(agent, id, tasks_config='tasks/micro1.json', output_file_template='./output-{}'):
     serializer = StandardSerializer()
+    tasks_config_file = os.path.expandvars(tasks_config)
     task_scheduler = JSONConfigLoader().create_tasks(tasks_config_file)
     env = Environment(serializer, task_scheduler, scramble=False,
                         max_reward_per_task=1000, byte_mode=True)
@@ -31,6 +31,7 @@ def train_agent(agent, id):
         session.run()
     except BaseException:
         view.finalize()
+        output_file_template = os.path.expandvars(output_file_template)
         save_results(session, output_file_template.format(id))
         raise
     else:
